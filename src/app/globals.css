@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DESIGN TOKENS — the single source of truth for the theme.
+   `src/lib/theme/tokens.ts` mirrors these values for TypeScript/code.
+   Rebrand the whole app by editing the values here.
+   ───────────────────────────────────────────────────────────────────────────── */
+:root {
+  --background: #ffffff;
+  --surface: #f9fafb;
+  --foreground: #111827;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --primary-hover: #4338ca;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --radius: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --surface: #171717;
+    --foreground: #ededed;
+    --muted: #9ca3af;
+    --border: #262626;
+    --primary: #6366f1;
+    --primary-hover: #818cf8;
+  }
+}
+
+/* Expose the tokens as Tailwind utilities: bg-primary, text-muted, border-border… */
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
