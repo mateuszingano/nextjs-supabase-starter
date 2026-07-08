@@ -34,9 +34,9 @@ Demo login (seeded locally): `demo@example.com` / `password123`.
 npm run test:rls
 ```
 
-Pair it with [`saas-kit`](https://github.com/mateuszingano/saas-kit), a small CLI
-that scaffolds this starter, checks your env + RLS, and generates RLS-safe
-migrations.
+Pair it with [`supabase-saas-kit`](https://www.npmjs.com/package/supabase-saas-kit)
+(`npx supabase-saas-kit new my-app`), a small CLI that scaffolds this starter,
+checks your env + RLS, and generates RLS-safe migrations.
 
 ## The security idea
 
