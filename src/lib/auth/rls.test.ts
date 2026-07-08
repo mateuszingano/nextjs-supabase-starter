@@ -8,8 +8,10 @@
  *      pointing at LOCAL (gitignored).
  *   3. `npm run test:rls`
  *
- * Without `.env.test` (or Supabase stopped) the tests are SKIPPED so the unit suite
- * still runs. The local DB is disposable: `supabase db reset` wipes it.
+ * Without `.env.test` — OR when it's set but Supabase isn't actually running —
+ * the tests are SKIPPED (not failed), so `npm test` on a fresh clone stays green
+ * and the unit suite still runs. The local DB is disposable: `supabase db reset`
+ * wipes it. See docs/testing.md.
  *
  * SAFETY: only runs against 127.0.0.1/localhost; a non-local URL ABORTS.
  * A failing test means A read or wrote B's data — a REAL security hole. Do NOT
@@ -30,7 +32,32 @@ const IS_LOCAL = /127\.0\.0\.1|localhost/.test(URL)
 if (URL && !IS_LOCAL) {
   throw new Error(`[rls.test] ABORTED: SUPABASE_URL is not local (${URL}). RLS tests only run against 127.0.0.1.`)
 }
-const ENABLED = !!URL && !!ANON && !!SERVICE && IS_LOCAL
+const CONFIGURED = !!URL && !!ANON && !!SERVICE && IS_LOCAL
+
+/**
+ * Is a local Supabase actually LISTENING? `.env.test` being present makes the
+ * suite CONFIGURED, but the DB may still be down (`supabase start` not run).
+ * Probe the REST endpoint so we SKIP cleanly instead of crashing beforeAll with
+ * ECONNREFUSED — a stopped Supabase is "not configured", not a test failure.
+ * Any HTTP answer (even 401/404) proves something is listening.
+ */
+async function supabaseReachable(): Promise<boolean> {
+  if (!CONFIGURED) return false
+  try {
+    const res = await fetch(`${URL.replace(/\/$/, '')}/rest/v1/`, {
+      headers: { apikey: ANON },
+      signal: AbortSignal.timeout(2000),
+    })
+    return res.status > 0
+  } catch {
+    return false
+  }
+}
+
+// Decided once, before the suite is defined, so `describe.skipIf` can skip the
+// whole thing without ever touching a dead socket. (Top-level await runs under
+// Vitest's ESM loader.)
+const ENABLED = await supabaseReachable()
 
 const service: SupabaseClient = ENABLED
   ? createClient(URL, SERVICE, { auth: { persistSession: false, autoRefreshToken: false } })
