@@ -13,6 +13,10 @@
  * and the unit suite still runs. The local DB is disposable: `supabase db reset`
  * wipes it. See docs/testing.md.
  *
+ * CI: set `RLS_TESTS_REQUIRED=1` to turn a silent skip into a hard failure — the
+ * proof must actually run there. Locally the var is unset, so the clean-skip
+ * behavior above is preserved.
+ *
  * SAFETY: only runs against 127.0.0.1/localhost; a non-local URL ABORTS.
  * A failing test means A read or wrote B's data — a REAL security hole. Do NOT
  * "fix" the test; fix the policy.
@@ -58,6 +62,17 @@ async function supabaseReachable(): Promise<boolean> {
 // whole thing without ever touching a dead socket. (Top-level await runs under
 // Vitest's ESM loader.)
 const ENABLED = await supabaseReachable()
+
+// CI guard: when RLS_TESTS_REQUIRED=1 the isolation proof MUST run. If it would
+// be skipped (no local Supabase reachable), fail loudly instead of passing green
+// on a false "safe". Local runs leave this unset and keep the clean-skip.
+if (process.env.RLS_TESTS_REQUIRED === '1' && !ENABLED) {
+  throw new Error(
+    '[rls.test] RLS_TESTS_REQUIRED=1 but no local Supabase is reachable — the ' +
+      'isolation proof would be skipped. Run `supabase start` and set .env.test ' +
+      '(SUPABASE_URL/ANON/SERVICE pointing at 127.0.0.1).'
+  )
+}
 
 const service: SupabaseClient = ENABLED
   ? createClient(URL, SERVICE, { auth: { persistSession: false, autoRefreshToken: false } })
