@@ -56,7 +56,7 @@ This starter is **single-user**. Real SaaS needs more, and that's the paid
 | Single-user notes + RLS | **Multi-tenant workspaces** (teams, invites, roles) |
 | One RLS test | **Full RLS isolation suite** + meta-test + E2E + CI |
 | Auth basics | Password flows, settings, polished app shell, docs |
-| — | **Pro:** billing (Lemon Squeezy), admin panel, web push |
+| — | **Pro:** billing (Paddle), admin panel, web push |
 
 The moment you need teams, you've outgrown the starter. That's the upgrade.
 
