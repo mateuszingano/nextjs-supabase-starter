@@ -1,0 +1,36 @@
+import { describe, it, expect } from 'vitest'
+import { isPublicPath } from './proxy'
+
+// The edge auth check skips public routes and static assets. These tests pin down
+// the two footguns the old `pathname.includes('.')` + prefix `startsWith` had:
+// a protected path with a dot must NOT be treated as static, and a prefix like
+// `/login-evil` must NOT be treated as the public `/login`.
+describe('isPublicPath', () => {
+  it('treats real public routes (and their subpaths) as public', () => {
+    expect(isPublicPath('/login')).toBe(true)
+    expect(isPublicPath('/signup')).toBe(true)
+    expect(isPublicPath('/auth/callback')).toBe(true)
+    expect(isPublicPath('/auth/callback/google')).toBe(true)
+  })
+
+  it('does NOT treat a prefix lookalike as public', () => {
+    expect(isPublicPath('/login-evil')).toBe(false)
+    expect(isPublicPath('/signup-admin')).toBe(false)
+    expect(isPublicPath('/loginsomething')).toBe(false)
+  })
+
+  it('skips genuine static assets by extension', () => {
+    expect(isPublicPath('/robots.txt')).toBe(true)
+    expect(isPublicPath('/sitemap.xml')).toBe(true)
+    expect(isPublicPath('/favicon.ico')).toBe(true)
+    expect(isPublicPath('/fonts/inter.woff2')).toBe(true)
+    expect(isPublicPath('/_next/static/chunk.js')).toBe(true)
+  })
+
+  it('does NOT skip a protected route just because it contains a dot', () => {
+    expect(isPublicPath('/dashboard/report.2024')).toBe(false)
+    expect(isPublicPath('/notes/v1.2')).toBe(false)
+    expect(isPublicPath('/api/notes')).toBe(false)
+    expect(isPublicPath('/dashboard')).toBe(false)
+  })
+})

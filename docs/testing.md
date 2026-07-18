@@ -80,7 +80,9 @@ supabase db reset   # re-applies migrations + seed; wipes local data
 
 ## What CI runs
 
-CI (`.github/workflows/test.yml`) runs `typecheck`, `lint`, and `test` on a
-fresh checkout with no Supabase. The RLS test therefore skips there. Running the
-RLS proof in CI (spinning up Supabase in the workflow) is a separate, deliberate
-step not wired up yet.
+CI (`.github/workflows/ci.yml`) has two jobs. The `test` job runs `typecheck`,
+`lint`, and `test` on a fresh checkout with no Supabase, so the RLS test skips
+there. The separate `rls` job spins up local Supabase (`supabase start`, which
+applies migrations + seed), writes a `.env.test` pointed at `127.0.0.1`, and runs
+`npm run test:rls` with `RLS_TESTS_REQUIRED=1` so the job fails if the isolation
+proof is skipped rather than run.

@@ -30,7 +30,7 @@ starter are your responsibility.
   blocks IDOR-style attacks.
 - **SSR sessions** validated with `getUser()` (not just a decoded cookie), refreshed in
   `src/proxy.ts` and re-checked in Server Components.
-- **`SECURITY DEFINER` helpers** pin `search_path` to prevent search-path privilege escalation.
+- **Functions** pin `search_path` (e.g. `set_updated_at` sets `search_path = ''`) to prevent search-path privilege escalation.
 - **Security headers** (CSP, HSTS, `X-Frame-Options`, `nosniff`, Referrer/Permissions policies)
   applied to every response in `next.config.ts`.
 - **Secrets** stay in gitignored `.env.*` files; the `service_role` key is server-only.

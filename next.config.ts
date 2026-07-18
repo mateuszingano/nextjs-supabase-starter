@@ -1,7 +1,14 @@
 import type { NextConfig } from 'next'
 
-// Security headers applied to every response. Tighten the CSP per app as needed;
-// the connect-src already allows Supabase (REST + realtime) and local dev.
+// Security headers applied to every response.
+//
+// CSP HONESTY: script-src still allows 'unsafe-inline' because the Next.js App Router
+// injects inline bootstrap/hydration scripts and this config sets a STATIC header (no
+// per-request nonce). So treat this CSP as defense-in-depth, NOT a full XSS mitigation
+// — an injected inline <script> would still run. The recommended upgrade is a
+// nonce-based CSP set in src/proxy.ts (generate a per-request nonce, drop
+// 'unsafe-inline', add 'strict-dynamic'). 'unsafe-eval' has been removed (app code
+// never needs it). connect-src allows Supabase (REST + realtime) and local dev.
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'DENY' },
@@ -12,7 +19,7 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
