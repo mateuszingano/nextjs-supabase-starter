@@ -26,6 +26,11 @@ export default function UpdatePasswordPage() {
       return
     }
 
+    // Evict every OTHER session on a password change, so a reset (or a change after a
+    // suspected compromise) actually boots an attacker or an old device instead of just
+    // rotating the credential. Keep THIS session so the user proceeds. Best effort.
+    await supabase.auth.signOut({ scope: 'others' }).catch(() => {})
+
     router.push('/notes')
     router.refresh()
   }
