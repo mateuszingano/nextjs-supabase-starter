@@ -5,7 +5,7 @@ This starter ships a small, layered test suite. Two layers, different needs:
 | Layer | Command | Needs Supabase? | Runs in CI? |
 |---|---|---|---|
 | Unit (validation, pure logic) | `npm test` | No | Yes |
-| RLS isolation (`src/lib/auth/rls.test.ts`) | `npm run test:rls` | **Yes** — local Supabase + `.env.test` | No (needs a live DB) |
+| RLS isolation (`src/lib/auth/rls.test.ts`) | `npm run test:rls` | **Yes** — local Supabase + `.env.test` | Yes — the `rls` CI job runs `supabase start` then `test:rls` (`RLS_TESTS_REQUIRED=1`) |
 
 `npm test` runs the whole `vitest` suite. The RLS file is part of it, but it is
 written to **skip itself** unless a local Supabase is configured (see below), so
