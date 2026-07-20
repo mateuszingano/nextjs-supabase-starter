@@ -9,10 +9,17 @@ import type { NextConfig } from 'next'
 // nonce onto its scripts only when a page is DYNAMICALLY rendered; a static page's HTML
 // is baked at build time, so its scripts carry no nonce and 'strict-dynamic' then blocks
 // every script — a blank page. Making it work would require forcing dynamic rendering on
-// all pages, sacrificing static optimization. So this stays a defense-in-depth CSP (an
-// injected inline <script> would still run); pair it with output escaping + trusted-types
-// at the app level. 'unsafe-eval' is removed (app code never needs it). connect-src
-// allows Supabase (REST + realtime) and local dev.
+// all pages, sacrificing static optimization. So this stays a defense-in-depth CSP.
+//
+// PRICE OF THAT TRADE-OFF, STATED IN FULL: an injected inline <script> does not
+// merely run — the Supabase session cookie is `httpOnly: false` (the @supabase/ssr
+// browser client must read it), so injected script can do `document.cookie` and
+// exfiltrate the whole session. XSS here is account takeover, not defacement.
+// Output escaping and keeping untrusted data out of HTML are therefore the real
+// defense, not this header. See SECURITY.md.
+//
+// 'unsafe-eval' is removed (app code never needs it). connect-src allows Supabase
+// (REST + realtime) and local dev.
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'DENY' },

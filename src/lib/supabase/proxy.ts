@@ -15,7 +15,12 @@ const STATIC_ASSET = /\.(?:ico|png|jpe?g|gif|svg|webp|avif|css|js|mjs|map|txt|xm
 // prefix like /login-evil is NOT public. Exported so it can be unit-tested directly.
 export function isPublicPath(pathname: string): boolean {
   const isPublicRoute = PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + '/'))
-  return isPublicRoute || pathname.startsWith('/_next') || STATIC_ASSET.test(pathname)
+  // `/_next` matches on a path BOUNDARY, same as the public routes above. A bare
+  // `startsWith('/_next')` would also treat `/_nextevil/x` as public — the exact
+  // prefix-lookalike bug this function was hardened against for `/login`, left
+  // half-fixed on the line below it.
+  const isNextAsset = pathname === '/_next' || pathname.startsWith('/_next/')
+  return isPublicRoute || isNextAsset || STATIC_ASSET.test(pathname)
 }
 
 // Refreshes the Supabase session on every request and guards protected routes.
@@ -55,9 +60,23 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) {
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
+  if (!user) return unauthenticatedResponse(pathname, request.url)
 
   return supabaseResponse
+}
+
+/**
+ * How an unauthenticated request is turned away, by kind of caller.
+ *
+ * A page navigation should land on /login. A `fetch()` from the app, a mobile
+ * client or a CLI should get a machine-readable 401 instead: redirecting an API
+ * call to an HTML login page means the caller runs `res.json()` on markup and
+ * dies with a parse error, rather than triggering its re-auth flow. Exported so
+ * the rule is unit-testable without standing up the whole Supabase client.
+ */
+export function unauthenticatedResponse(pathname: string, requestUrl: string): NextResponse {
+  if (pathname === '/api' || pathname.startsWith('/api/')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  return NextResponse.redirect(new URL('/login', requestUrl))
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError, bodyTooLarge } from '@/lib/api-error'
 import { authenticate } from '@/lib/auth/api'
 import { noteInputSchema } from '@/lib/validation/notes'
 
@@ -12,6 +13,8 @@ export async function PATCH(request: Request, { params }: Context) {
   if (!auth.ok) return auth.response
   const { supabase } = auth
 
+  const tooLarge = bodyTooLarge(request)
+  if (tooLarge) return tooLarge
   const parsed = noteInputSchema
     .partial()
     .refine((v) => Object.keys(v).length > 0, 'No fields to update')
@@ -27,7 +30,7 @@ export async function PATCH(request: Request, { params }: Context) {
     .select('id, title, body, created_at, updated_at')
     .maybeSingle()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError('notes/[id] PATCH', error)
   if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json({ note: data })
 }
@@ -46,7 +49,7 @@ export async function DELETE(_request: Request, { params }: Context) {
     .select('id')
     .maybeSingle()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError('notes/[id] DELETE', error)
   if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json({ ok: true })
 }

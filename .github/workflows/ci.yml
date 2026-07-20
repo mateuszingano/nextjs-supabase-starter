@@ -19,6 +19,12 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test
+      # A vulnerable dependency should surface here, not when someone happens to
+      # run `npm audit` by hand. Gated at `high` so a moderate advisory with no
+      # non-breaking fix does not block the build while still being visible in
+      # the log; raise to `moderate` once the tree is clean.
+      - name: Audit dependencies
+        run: npm audit --omit=dev --audit-level=high
 
   rls:
     name: RLS isolation (local Supabase)
@@ -32,7 +38,10 @@ jobs:
       - run: npm ci
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned, not `latest`. This job IS the isolation proof, and `latest`
+          # makes it non-reproducible: a CLI release can change or break the
+          # stack under you with no commit on your side. Bump deliberately.
+          version: 2.106.0
       - name: Start local Supabase (applies migrations + seed)
         run: supabase start
       # Local Supabase demo keys are fixed and public — they only work against 127.0.0.1.

@@ -60,17 +60,34 @@ Because it needs a live database, it only runs when you set it up:
 
 ### When it skips (on purpose)
 
-The RLS test **skips cleanly** — it does not fail — in any of these cases, so
-`npm test` never breaks because of it:
+The RLS test **skips cleanly** — it does not fail — when it simply cannot run:
 
 - No `.env.test`, or it's missing `SUPABASE_URL` / `SUPABASE_ANON_KEY` /
   `SUPABASE_SERVICE_ROLE_KEY`.
-- The URL is not local (`127.0.0.1` / `localhost`). A non-local URL **aborts**
-  loudly instead — these tests create and delete users, so they must never touch
-  a shared or production database.
 - `.env.test` looks right but Supabase isn't actually running (nothing listening
   on the API port). The suite probes the connection first and skips with a note
   rather than crashing with `ECONNREFUSED`.
+
+### When it aborts (also on purpose)
+
+In these cases the suite **fails loudly** instead, because carrying on would
+either be dangerous or would prove nothing:
+
+- **The URL is not local** (`127.0.0.1` / `localhost`). These tests create and
+  delete users, so they must never touch a shared or production database.
+- **A Supabase is listening, but it is not THIS project's database.** The
+  Supabase CLI serves every project on the same ports, so another project's
+  stack answering on 54321 would otherwise have this suite prove the isolation
+  of a database we do not ship — or fail with a baffling "table not found". The
+  check looks for the `notes` table (see `FINGERPRINT_TABLE` in
+  `src/lib/auth/rls.test.ts`); **if you rename that table in your own copy,
+  update the constant to match.**
+- **`RLS_TESTS_REQUIRED=1` is set and the suite would skip.** CI sets this so a
+  missing database can never be mistaken for a passing isolation proof.
+
+So `npm test` on a fresh clone is green (the RLS suite reports as *skipped*),
+but it will go red if a wrong or unreachable database would have made the proof
+meaningless.
 
 To reset the local database between runs:
 

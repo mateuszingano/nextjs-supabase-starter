@@ -58,10 +58,58 @@ async function supabaseReachable(): Promise<boolean> {
   }
 }
 
+/**
+ * Is the reachable Supabase actually THIS PROJECT'S database?
+ *
+ * The Supabase CLI serves every project on the same default ports (54321/54322),
+ * so "something answered on 127.0.0.1" does not mean it is ours. With another
+ * project's stack up, this suite would run against ITS schema — creating and
+ * deleting auth users there with the service_role key, and either failing with a
+ * baffling "table not found" or, worse, proving the isolation of a database that
+ * isn't the one we ship.
+ *
+ * A wrong database is a usage ERROR, not an absence: we throw instead of
+ * skipping, because skipping is how "I never tested it" gets to look like "it
+ * passed".
+ */
+/**
+ * The table this suite proves isolation for. Rename it together with your own
+ * entity when you replace the `notes` example — this is the fingerprint, not a
+ * hidden dependency. (The starter tells you to copy the notes pattern for every
+ * new table; if the fingerprint stayed hardcoded to `notes`, renaming it would
+ * make this abort claim you are on the wrong database, which is a confidently
+ * wrong diagnosis.)
+ */
+const FINGERPRINT_TABLE = 'notes'
+
+async function assertOurDatabase(): Promise<void> {
+  // Probe with the ANON key, never the service key.
+  //
+  // The whole premise here is "something answered on this port, but we have not
+  // established that it is ours" — so handing that unidentified host a bearer
+  // token that bypasses RLS contradicts the check itself. The anon key produces
+  // an identical signal (the table is granted to anon), and if the host is not
+  // ours we have leaked nothing.
+  const res = await fetch(`${URL.replace(/\/$/, '')}/rest/v1/${FINGERPRINT_TABLE}?select=id&limit=0`, {
+    headers: { apikey: ANON, Authorization: `Bearer ${ANON}` },
+    signal: AbortSignal.timeout(2000),
+  })
+  if (res.ok) return
+  throw new Error(
+    `[rls.test] ABORTED: a Supabase is listening at ${URL}, but it has no "${FINGERPRINT_TABLE}" table ` +
+      `(HTTP ${res.status}).\n` +
+      `  · If another project's Supabase is up, this is its database, not ours — the CLI uses the same ` +
+      `ports for every project. Run \`supabase stop\` there, then \`supabase start\` here.\n` +
+      `  · If you renamed or removed the "${FINGERPRINT_TABLE}" table in your own copy of this starter, ` +
+      `update FINGERPRINT_TABLE in this file to match.`
+  )
+}
+
 // Decided once, before the suite is defined, so `describe.skipIf` can skip the
 // whole thing without ever touching a dead socket. (Top-level await runs under
 // Vitest's ESM loader.)
 const ENABLED = await supabaseReachable()
+if (ENABLED) await assertOurDatabase()
 
 // CI guard: when RLS_TESTS_REQUIRED=1 the isolation proof MUST run. If it would
 // be skipped (no local Supabase reachable), fail loudly instead of passing green

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { serverError, bodyTooLarge } from '@/lib/api-error'
 import { authenticate } from '@/lib/auth/api'
 import { noteInputSchema } from '@/lib/validation/notes'
 
@@ -13,7 +14,7 @@ export async function GET() {
     .select('id, title, body, created_at, updated_at')
     .order('updated_at', { ascending: false })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError('notes GET', error)
   return NextResponse.json({ notes: data })
 }
 
@@ -23,6 +24,8 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response
   const { supabase, user } = auth
 
+  const tooLarge = bodyTooLarge(request)
+  if (tooLarge) return tooLarge
   const parsed = noteInputSchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input', issues: parsed.error.flatten() }, { status: 400 })
@@ -40,6 +43,6 @@ export async function POST(request: Request) {
     .select('id, title, body, created_at, updated_at')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError('notes POST', error)
   return NextResponse.json({ note: data }, { status: 201 })
 }
