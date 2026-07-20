@@ -49,7 +49,7 @@ policy ever leaks. Want that enforced in CI on every deploy? See
 ## Outgrowing it? — the full boilerplate
 
 This starter is **single-user**. Real SaaS needs more, and that's the paid
-[SaaS Boilerplate](https://zingui.app.br):
+[SaaS Boilerplate](https://shipsealed.com/#paid):
 
 | Free starter (this repo) | Paid boilerplate |
 |---|---|

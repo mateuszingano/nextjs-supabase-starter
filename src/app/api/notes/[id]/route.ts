@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { serverError, bodyTooLarge } from '@/lib/api-error'
 import { authenticate } from '@/lib/auth/api'
-import { noteInputSchema } from '@/lib/validation/notes'
+import { notePatchSchema } from '@/lib/validation/notes'
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -15,10 +15,7 @@ export async function PATCH(request: Request, { params }: Context) {
 
   const tooLarge = bodyTooLarge(request)
   if (tooLarge) return tooLarge
-  const parsed = noteInputSchema
-    .partial()
-    .refine((v) => Object.keys(v).length > 0, 'No fields to update')
-    .safeParse(await request.json().catch(() => null))
+  const parsed = notePatchSchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input', issues: parsed.error.flatten() }, { status: 400 })
   }
