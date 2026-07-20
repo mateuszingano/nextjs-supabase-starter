@@ -28,6 +28,10 @@ starter are your responsibility.
 - **Server-resolved ownership.** API routes never trust an `author_id` from the request body;
   they set it from the authenticated session, then RLS double-checks with `WITH CHECK`. This
   blocks IDOR-style attacks.
+- **Input limits enforced at the database, not just in Zod.** Because `authenticated` holds a
+  direct grant on `notes` (so RLS is what scopes rows), a user could talk to PostgREST with
+  their own JWT and skip the API's Zod validation. `CHECK` constraints on `title`/`body` length
+  keep the limits true regardless of which client wrote the row.
 - **SSR sessions** validated with `getUser()` (not just a decoded cookie), refreshed in
   `src/proxy.ts` and re-checked in Server Components.
 - **Functions** pin `search_path` (e.g. `set_updated_at` sets `search_path = ''`) to prevent search-path privilege escalation.

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { serverError, bodyTooLarge } from '@/lib/api-error'
+import { serverError, readJsonWithinLimit } from '@/lib/api-error'
 import { authenticate } from '@/lib/auth/api'
 import { noteInputSchema } from '@/lib/validation/notes'
 
@@ -24,9 +24,9 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response
   const { supabase, user } = auth
 
-  const tooLarge = bodyTooLarge(request)
-  if (tooLarge) return tooLarge
-  const parsed = noteInputSchema.safeParse(await request.json().catch(() => null))
+  const body = await readJsonWithinLimit(request)
+  if (!body.ok) return body.response
+  const parsed = noteInputSchema.safeParse(body.value)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input', issues: parsed.error.flatten() }, { status: 400 })
   }

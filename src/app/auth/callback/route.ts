@@ -10,7 +10,11 @@ export async function GET(request: Request) {
   // Only allow relative in-app paths. Blocks open-redirect payloads crafted into
   // the callback URL — e.g. `@evil.com`, `.evil.com`, or `//evil.com`, which
   // `${origin}${next}` would otherwise resolve to an attacker-controlled host.
-  const next = nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/notes'
+  // A backslash is rejected too: WHATWG URL parsing folds `\` into `/`, so
+  // `/\evil.com` would normalise to a protocol-relative `//evil.com`.
+  const isSafeNext =
+    nextParam.startsWith('/') && !nextParam.startsWith('//') && !nextParam.includes('\\')
+  const next = isSafeNext ? nextParam : '/notes'
 
   if (code) {
     const supabase = await createClient()

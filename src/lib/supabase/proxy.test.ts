@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { isPublicPath, unauthenticatedResponse } from './proxy'
 
 // The edge auth check skips public routes and static assets. These tests pin down
@@ -75,5 +75,61 @@ describe('_next boundary', () => {
   it('does NOT treat a prefix lookalike as a framework asset', () => {
     expect(isPublicPath('/_nextevil/admin')).toBe(false)
     expect(isPublicPath('/_nextadmin')).toBe(false)
+  })
+})
+
+// updateSession is the edge auth gate. Two footguns it must never regress:
+//  1. it validates the token with getUser() (revalidates server-side), NEVER
+//     getSession() (which trusts the unverified cookie).
+//  2. a request with no user on a protected route is turned away — deleting
+//     that branch let unauthenticated requests through.
+const ssr = vi.hoisted(() => ({
+  getUser: vi.fn(),
+  getSession: vi.fn(async () => ({ data: { session: { user: { id: 'from-cookie' } } }, error: null })),
+}))
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: vi.fn(() => ({ auth: { getUser: ssr.getUser, getSession: ssr.getSession } })),
+}))
+
+// Imported after the mock is registered (vi.mock is hoisted, so this is safe).
+import { updateSession } from './proxy'
+import { NextRequest } from 'next/server'
+
+describe('updateSession (edge auth gate)', () => {
+  beforeEach(() => {
+    ssr.getUser.mockReset()
+    ssr.getSession.mockClear()
+  })
+
+  it('lets a public route through without checking auth', async () => {
+    const res = await updateSession(new NextRequest('https://app.test/login'))
+    expect(res.status).toBe(200)
+    expect(ssr.getUser).not.toHaveBeenCalled()
+  })
+
+  it('validates with getUser(), not getSession()', async () => {
+    ssr.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
+    await updateSession(new NextRequest('https://app.test/notes'))
+    expect(ssr.getUser).toHaveBeenCalled()
+    expect(ssr.getSession).not.toHaveBeenCalled()
+  })
+
+  it('401s an unauthenticated API request', async () => {
+    ssr.getUser.mockResolvedValue({ data: { user: null }, error: null })
+    const res = await updateSession(new NextRequest('https://app.test/api/notes'))
+    expect(res.status).toBe(401)
+  })
+
+  it('redirects an unauthenticated page navigation to /login', async () => {
+    ssr.getUser.mockResolvedValue({ data: { user: null }, error: null })
+    const res = await updateSession(new NextRequest('https://app.test/notes'))
+    expect(res.status).toBe(307)
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/login')
+  })
+
+  it('lets an authenticated request proceed', async () => {
+    ssr.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
+    const res = await updateSession(new NextRequest('https://app.test/notes'))
+    expect(res.status).toBe(200)
   })
 })
