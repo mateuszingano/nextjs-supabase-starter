@@ -246,6 +246,25 @@ describe.skipIf(!ENABLED)('RLS — user isolation (local Supabase)', () => {
     const { data } = await anon.from('notes').select('*').limit(1)
     expect(data ?? [], 'RLS HOLE: anon (logged out) READ notes').toHaveLength(0)
   })
+
+  // The length limits are a DATABASE guarantee (CHECK constraints), not just a
+  // Zod convenience — because `authenticated` writes to PostgREST directly. Prove
+  // it at the layer that skips Zod: a signed-in client inserting into its OWN
+  // account with an over-length title/body must be refused by the constraint
+  // (SQLSTATE 23514), so a future migration edit that drops the CHECK fails here.
+  it('the database CHECK (not just Zod) rejects an over-length title or body', async () => {
+    const { error: longTitle } = await clientA
+      .from('notes')
+      .insert({ author_id: A.userId, title: 'a'.repeat(201), body: 'x' })
+      .select('id')
+    expect(longTitle?.code, 'DB CHECK gone: an over-length title was accepted').toBe('23514')
+
+    const { error: longBody } = await clientA
+      .from('notes')
+      .insert({ author_id: A.userId, title: 'ok', body: 'b'.repeat(10_001) })
+      .select('id')
+    expect(longBody?.code, 'DB CHECK gone: an over-length body was accepted').toBe('23514')
+  })
 })
 
 /**
@@ -329,6 +348,22 @@ describe.skipIf(!DB_ENABLED)('RLS — write policies stand on their own (SELECT 
       await clientA.from('notes').insert({ author_id: B.userId, title: marker, body: 'x' })
       const { data: ins } = await service.from('notes').select('id').eq('title', marker)
       expect(ins ?? [], 'RLS HOLE: A INSERTED a note owned by B').toHaveLength(0)
+    })
+  })
+
+  // The UPDATE policy's WITH CHECK, exercised on its own. USING lets A touch its
+  // OWN row; WITH CHECK governs the NEW value — it must stop A reassigning that
+  // row to another owner. This only becomes observable under a widened SELECT:
+  // with the shipped owner-scoped SELECT, reassigning author_id makes the new
+  // row invisible and Postgres blocks it regardless of the UPDATE WITH CHECK, so
+  // the vector can't tell a correct policy from `with check (true)`. Widen SELECT
+  // and the WITH CHECK is the only thing left standing between A and planting a
+  // row in B's namespace — proven: `with check (true)` lets the reassign through.
+  it('A cannot reassign its own note to another owner (UPDATE WITH CHECK)', async () => {
+    await withWideOpenSelect(async () => {
+      await clientA.from('notes').update({ author_id: B.userId }).eq('id', A.noteId)
+      const { data } = await service.from('notes').select('author_id').eq('id', A.noteId)
+      expect(data?.[0]?.author_id, "RLS HOLE: A reassigned its own note to B via UPDATE WITH CHECK").toBe(A.userId)
     })
   })
 })
