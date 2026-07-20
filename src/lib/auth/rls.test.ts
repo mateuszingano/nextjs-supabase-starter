@@ -23,6 +23,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { Client } from 'pg'
 import { config } from 'dotenv'
 import { resolve } from 'node:path'
 
@@ -31,6 +32,9 @@ config({ path: resolve(process.cwd(), '.env.test') })
 const URL = process.env.SUPABASE_URL || ''
 const ANON = process.env.SUPABASE_ANON_KEY || ''
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+// Direct Postgres connection — needed only by the "write policies stand on
+// their own" block below, which has to run DDL (PostgREST cannot).
+const DB_URL = process.env.SUPABASE_DB_URL || ''
 
 const IS_LOCAL = /127\.0\.0\.1|localhost/.test(URL)
 if (URL && !IS_LOCAL) {
@@ -119,6 +123,19 @@ if (process.env.RLS_TESTS_REQUIRED === '1' && !ENABLED) {
     '[rls.test] RLS_TESTS_REQUIRED=1 but no local Supabase is reachable — the ' +
       'isolation proof would be skipped. Run `supabase start` and set .env.test ' +
       '(SUPABASE_URL/ANON/SERVICE pointing at 127.0.0.1).'
+  )
+}
+
+// Same discipline for the write-policy proof: it needs a direct DB connection,
+// and a missing SUPABASE_DB_URL must not quietly downgrade the suite to the
+// weaker guarantee. Locally it skips; in CI it fails loudly.
+const DB_ENABLED = ENABLED && !!DB_URL
+if (process.env.RLS_TESTS_REQUIRED === '1' && ENABLED && !DB_URL) {
+  throw new Error(
+    '[rls.test] RLS_TESTS_REQUIRED=1 but SUPABASE_DB_URL is unset — the ' +
+      'write-policy proof would be skipped, leaving UPDATE/DELETE/INSERT ' +
+      'policies untested. Add SUPABASE_DB_URL to .env.test ' +
+      '(postgresql://postgres:postgres@127.0.0.1:54322/postgres).'
   )
 }
 
@@ -228,5 +245,90 @@ describe.skipIf(!ENABLED)('RLS — user isolation (local Supabase)', () => {
     // RLS blocks the anonymous role — not that the table is simply empty.
     const { data } = await anon.from('notes').select('*').limit(1)
     expect(data ?? [], 'RLS HOLE: anon (logged out) READ notes').toHaveLength(0)
+  })
+})
+
+/**
+ * WRITE POLICIES STAND ON THEIR OWN — the test the block above cannot be.
+ *
+ * PostgreSQL applies the SELECT policy when it locates rows for an UPDATE or a
+ * DELETE. With an owner-scoped SELECT policy, a wide-open write policy is
+ * therefore INVISIBLE: set `using (true)` on the DELETE policy and A's delete
+ * still removes 0 rows, so every assertion above stays green. Verifying the
+ * final state via service_role does not help — there is no effect to detect.
+ *
+ * That is safe for THIS schema, but the starter is a pattern to copy. The
+ * moment a table reads wider than it writes — "the whole team reads it, only
+ * the owner edits it", the normal shape once you have teams — the SELECT policy
+ * stops shadowing the write policies, they become the only guard, and nothing
+ * above would notice if one of them were `true`.
+ *
+ * So this block widens SELECT to `using (true)` for its duration and proves
+ * each write policy blocks A on its own. The original expression is read from
+ * the catalog and restored in `finally`, so a rename or an edit to the policy
+ * survives this test.
+ */
+async function withWideOpenSelect<T>(fn: () => Promise<T>): Promise<T> {
+  const db = new Client({ connectionString: DB_URL })
+  await db.connect()
+  const { rows } = await db.query(
+    `select polname, pg_get_expr(polqual, polrelid) as expr
+       from pg_policy
+      where polrelid = 'public.notes'::regclass and polcmd = 'r'`
+  )
+  if (rows.length !== 1) {
+    await db.end()
+    throw new Error(
+      `[rls.test] expected exactly 1 SELECT policy on public.notes, found ${rows.length}. ` +
+        `Adjust this fixture to match your schema.`
+    )
+  }
+  const { polname, expr } = rows[0] as { polname: string; expr: string }
+  const ident = `"${polname.replace(/"/g, '""')}"`
+  try {
+    await db.query(`alter policy ${ident} on public.notes using (true)`)
+    return await fn()
+  } finally {
+    await db.query(`alter policy ${ident} on public.notes using (${expr})`)
+    await db.end()
+  }
+}
+
+describe.skipIf(!DB_ENABLED)('RLS — write policies stand on their own (SELECT widened)', () => {
+  beforeAll(async () => {
+    A = await createWorld('wa')
+    B = await createWorld('wb')
+    clientA = await signIn(A.email, A.password)
+  }, 60_000)
+
+  afterAll(async () => {
+    for (const w of [A, B]) {
+      if (!w) continue
+      await service.from('notes').delete().eq('author_id', w.userId)
+      await service.auth.admin.deleteUser(w.userId)
+    }
+  }, 60_000)
+
+  it('A cannot update, delete or forge B\'s note even when it can SEE it', async () => {
+    await withWideOpenSelect(async () => {
+      // The fixture must actually be in effect. Without this, a silently failed
+      // ALTER would make every assertion below pass for the wrong reason —
+      // which is exactly the failure mode this whole block exists to prevent.
+      const { data: seen } = await clientA.from('notes').select('id').eq('id', B.noteId)
+      expect(seen ?? [], 'FIXTURE INERT: widening SELECT did not take effect').toHaveLength(1)
+
+      await clientA.from('notes').update({ title: 'HACKED-WIDE' }).eq('id', B.noteId)
+      const { data: upd } = await service.from('notes').select('title').eq('id', B.noteId)
+      expect(upd?.[0]?.title, "RLS HOLE: A UPDATED B's note once SELECT stopped hiding it").not.toBe('HACKED-WIDE')
+
+      await clientA.from('notes').delete().eq('id', B.noteId)
+      const { data: del } = await service.from('notes').select('id').eq('id', B.noteId)
+      expect(del ?? [], "RLS HOLE: A DELETED B's note once SELECT stopped hiding it").toHaveLength(1)
+
+      const marker = `INTRUDER-WIDE-${RUN}`
+      await clientA.from('notes').insert({ author_id: B.userId, title: marker, body: 'x' })
+      const { data: ins } = await service.from('notes').select('id').eq('title', marker)
+      expect(ins ?? [], 'RLS HOLE: A INSERTED a note owned by B').toHaveLength(0)
+    })
   })
 })

@@ -30,6 +30,16 @@ against a **local** Supabase and asserts user A can never read, update, delete,
 or forge user B's notes (and that a logged-out visitor reads nothing). A failure
 here means a real RLS hole — fix the policy, never the test.
 
+A second block, **"write policies stand on their own"**, exists because Postgres
+applies the SELECT policy when locating rows for an UPDATE/DELETE — so an
+owner-scoped SELECT policy hides whether the write policies are actually doing
+anything. This block widens SELECT to `using (true)` for its duration (via a
+direct `pg` connection — `SUPABASE_DB_URL` — since that needs DDL) and proves
+each write policy blocks A on its own, then restores the original policy. It is
+what keeps the "fails loudly if a policy ever leaks" promise true once you copy
+the pattern to a table that reads wider than it writes. It skips (locally) or
+fails loudly (CI) if `SUPABASE_DB_URL` is unset.
+
 Because it needs a live database, it only runs when you set it up:
 
 1. Start local Supabase (Docker required):
